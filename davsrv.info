@@ -1,0 +1,6 @@
+name = "Dav Server"
+description = "Dav Server"
+package = Dav Server
+project = "DavServer"
+version = "7.x-1.0"
+core = 7.x

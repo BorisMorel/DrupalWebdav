@@ -1,0 +1,9 @@
+<?php
+
+function davsrv_install() {
+    return;
+}
+
+function davsrv_uninstall() {
+    return;
+}

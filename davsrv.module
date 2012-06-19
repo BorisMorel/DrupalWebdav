@@ -1,0 +1,29 @@
+<?php
+
+require_once(dirname(__FILE__).'/autoload.php');
+
+define(WEBDAV_ROOT, 'davsrv');
+define(DOCUMENT_ROOT, '/sharing');
+/**
+ * Implementation of hook_menu
+ */
+function davsrv_menu() {
+    $items = array (
+        WEBDAV_ROOT => array (
+            'page callback' => 'entry_point',
+            'type' => MENU_CALLBACK,
+            'access arguments' => array('access content'),
+        ),
+    );
+
+    return $items;
+}
+
+function entry_point() {
+    $server = ezcWebdavServer::getInstance();
+    $backend = WebdavDrupalBackend::getInstance()
+        ->setWebdavRoot(WEBDAV_ROOT)
+        ->setDocumentRoot(DOCUMENT_ROOT)
+        ;
+    $server->handle($backend);
+}
