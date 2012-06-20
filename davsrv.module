@@ -24,6 +24,7 @@ function entry_point() {
     $backend = WebdavDrupalBackend::getInstance()
         ->setDrupalUrlRoot(DRUPAL_WEBDAV_URL)
         ->setDocumentRoot(DOCUMENT_ROOT)
+        //        ->setRootCollection(array('sharing', 'partage'))
         ;
     $server->handle($backend);
 }

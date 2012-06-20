@@ -11,6 +11,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private static
         $singleton,
+        $rootCollection = array(),
         $routing = array (
             self::ROUTE_NODE_ROOT    => array (
                 'pattern' => "/",
@@ -28,7 +29,9 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
                 'collection' => 'nodeNodeCollection',
             ),
             self::ROUTE_NODE_CONTENT => array (
-                'pattern' => "/%node_type%/%node%/%content%"
+                'pattern' => "/%node_type%/%node%/%content%",
+                'exists' => "nodeContent",
+                'createResource' => 'nodeContentCreate'
             )
         ),
         $properties = array (
@@ -63,14 +66,44 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function createResource($path, $content = null)
     {
+        $route = $this->handleRoute($path);
+
+        if(!isset($route->createResource)) {
+            $route->createResource = 'FAKE';
+        }
+
+        if (!method_exists($this, $route->createResource)) {
+            throw new ezcWebdavInconsistencyException('Unallowed to create resource here !');
+        }
+
+        $this->{$route->createResource}($route);
+
+        
+    }
+
+    private function nodeContentCreate(stdClass $route)
+    {
+        $file = array(
+            'filename' => $route->arguments['content'],
+            'uri'      => 'public://'.$route->arguments['content'],
+            'filemime' => 'image/jpeg',
+            'status'   => 1
+        );
+
+        $file = (object) $file;
+        file_put_contents($file->uri, 'toto');
+
+        $savedFile = file_save($file);        
     }
 
     protected function setResourceContents($path, $content)
     {
+
     }
 
     protected function getResourceContents($path)
     {
+
     }
 
     public function setProperty($path, ezcWebdavProperty $property)
@@ -249,6 +282,11 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         return $res;
     }
 
+    private function nodeContent(stdClass $route)
+    {
+        return false;
+    }
+
     public function setDrupalUrlRoot($path)
     {
         $this->drupalUrlRoot = $path;
@@ -260,6 +298,13 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
     {
         $this->documentRoot = $path;
         
+        return $this;
+    }
+    
+    public function setRootCollection(array $collection)
+    {
+        static::$rootCollection = $collection;
+
         return $this;
     }
 
@@ -286,6 +331,19 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
         
         return $length;
+    }
+
+    private function nodeRootCollection(stdClass $route)
+    {
+        if (!isset(static::$rootCollection)) {
+            return array();
+        }
+        
+        foreach(static::$rootCollection as $item) {
+            $t[] = new ezcWebdavCollection($route->path.'/'.$item);
+        }
+
+        return $t;
     }
 
     private function nodeTypeCollection(stdClass $route)
@@ -322,17 +380,9 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function getFiles(stdClass $route)
     {
-        $query = db_select('field_config_instance', 'fci');
-        $query->join('field_config', 'fc', 'fci.field_id = fc.id');
-        $res = $query
-            ->fields('fci',array('field_name'))
-            ->condition('fci.bundle', $route->arguments['node_type'], 'LIKE')
-            ->condition('fc.type', 'file', 'LIKE')
-            ->execute()
-            ->fetchObject()
-            ;
+        $fileField = $this->getDbFileField($route);
         
-        $query = db_select(sprintf('field_data_%s', $res->field_name), 'ff');
+        $query = db_select(sprintf('field_data_%s', $fileField->field_name), 'ff');
         $query->join('node', 'n', 'n.nid = ff.entity_id');
         $files = $query
             ->fields('ff')
@@ -342,5 +392,20 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             ;
 
         return $files;
+    }
+
+    private function getDbFileField(stdClass $route)
+    {
+        $query = db_select('field_config_instance', 'fci');
+        $query->join('field_config', 'fc', 'fci.field_id = fc.id');
+        $res = $query
+            ->fields('fci')
+            ->condition('fci.bundle', $route->arguments['node_type'], 'LIKE')
+            ->condition('fc.type', 'file', 'LIKE')
+            ->execute()
+            ->fetchObject()
+            ;
+
+        return $res;
     }
 }
