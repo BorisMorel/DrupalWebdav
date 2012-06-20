@@ -2,7 +2,7 @@
 
 require_once(dirname(__FILE__).'/autoload.php');
 
-define(WEBDAV_ROOT, 'davsrv');
+define(DRUPAL_WEBDAV_URL, '/davsrv');
 define(DOCUMENT_ROOT, '/sharing');
 /**
  * Implementation of hook_menu
@@ -22,7 +22,7 @@ function davsrv_menu() {
 function entry_point() {
     $server = ezcWebdavServer::getInstance();
     $backend = WebdavDrupalBackend::getInstance()
-        ->setWebdavRoot(WEBDAV_ROOT)
+        ->setDrupalUrlRoot(DRUPAL_WEBDAV_URL)
         ->setDocumentRoot(DOCUMENT_ROOT)
         ;
     $server->handle($backend);
