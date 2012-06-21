@@ -29,9 +29,12 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
                 'collection' => 'nodeNodeCollection',
             ),
             self::ROUTE_NODE_CONTENT => array (
-                'pattern' => "/%node_type%/%node%/%content%",
-                'exists' => "nodeContent",
-                'createResource' => 'nodeContentCreate'
+                'pattern'             => "/%node_type%/%node%/%content%",
+                'exists'              => "nodeContent",
+                'collection'          => 'nodeContentCollection',
+                'setResourceContents' => 'nodeContentCreate',
+                'getResourceContents' => 'nodeContentGet',
+                'getLastModified'     => 'nodeLastModification',
             )
         ),
         $properties = array (
@@ -60,12 +63,18 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         return parent::propFind($request);
     }
 
+    public function get(ezcWebdavGetRequest $request)
+    {
+        return parent::get($request);
+    }
+
     protected function createCollection($path)
     {
     }
 
     protected function createResource($path, $content = null)
     {
+        /*
         $route = $this->handleRoute($path);
 
         if(!isset($route->createResource)) {
@@ -77,33 +86,86 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         $this->{$route->createResource}($route);
-
-        
-    }
-
-    private function nodeContentCreate(stdClass $route)
-    {
-        $file = array(
-            'filename' => $route->arguments['content'],
-            'uri'      => 'public://'.$route->arguments['content'],
-            'filemime' => 'image/jpeg',
-            'status'   => 1
-        );
-
-        $file = (object) $file;
-        file_put_contents($file->uri, 'toto');
-
-        $savedFile = file_save($file);        
+        */
     }
 
     protected function setResourceContents($path, $content)
     {
+        $route = $this->handleRoute($path);
 
+        if(!isset($route->setResourceContents)) {
+            $route->setResourceContents = 'FAKE';
+        }
+
+        if (!method_exists($this, $route->setResourceContents)) {
+            throw new ezcWebdavInconsistencyException('Unallowed to populate resource here !');
+        }
+
+        $this->{$route->setResourceContents}($route, $content);
+    }
+
+    private function nodeContentCreate(stdClass $route, $content)
+    {
+        $nodeNode = $this->nodeNode($route);
+        if (!$node = node_load($nodeNode->nid)) {
+            dd($route);
+            throw new ezcWebdavInconsistencyException('Unable to load node');
+        }
+
+        $file = array(
+            'filename' => $route->arguments['content'],
+            'uri'      => 'public://'.$route->arguments['content'],
+            'filemime' => file_get_mimetype($route->arguments['content']),
+            'status'   => 1,
+            'display'  => true,
+        );
+
+        $file = (object) $file;
+        
+        
+        if ($fileExists = $this->fileExists($file->filename)) {
+            $file->uri = 'public://'.$this->fileNameNewVersion($fileExists);
+        }
+        
+        file_put_contents($file->uri, $content);
+
+        $savedFile = file_save($file);
+
+        $fileField = $this->getDbFileField($route);
+        
+        foreach ($node->{$fileField->field_name}['und'] as $key => $file) {
+            $pos = $key + 1;
+
+            if ($file['filename'] == $savedFile->filename) {
+                $pos = $key;
+                break;
+            } 
+        }
+        
+        $node->{$fileField->field_name}['und'][isset($pos) ? $pos : 0] = (array) $savedFile;
+        $node->revision = true;
+
+        node_save($node);
     }
 
     protected function getResourceContents($path)
     {
+        $route = $this->handleRoute($path);
 
+        if (!isset($route->getResourceContents)) {
+            $route->getResourceContents = 'FAKE';
+        }
+
+        if (!method_exists($this, $route->getResourceContents)) {
+            throw new ezcWebdavInconsistencyException('Unable to get content with this route');
+        }
+        
+        return $this->{$route->getResourceContents}($route);
+    }
+
+    private function nodeContentGet(stdClass $route)
+    {
+        return file_get_contents('public://'.$route->arguments['content']);
     }
 
     public function setProperty($path, ezcWebdavProperty $property)
@@ -127,7 +189,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
         case 'getlastmodified':
             $property = new ezcWebdavGetLastModifiedProperty();
-            $property->date = new ezcWebdavDateTime('@' .  time());
+            $property->date = $this->getLastModified($path); //new ezcWebdavDateTime('@' .  time());
             return $property;
         
         case 'resourcetype':
@@ -149,6 +211,24 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         return $storage;
+    }
+
+    private function getLastModified($path)
+    {
+        $route = $this->handleRoute($path);
+
+        if (!isset($route->getLastModified)) {
+            return new ezcWebdavDateTime('@'.time());
+        }
+
+        return $this->{$route->getLastModified}($route);
+    }
+
+    private function nodeLastModification(stdClass $route)
+    {
+        $file = $this->getFile($route);
+
+        return new ezcWebdavDateTime('@'. $file->timestamp);
     }
 
     protected function performCopy($fromPath, $toPath, $depth = ezcWebdavRequest::DEPTH_INFINITY)
@@ -174,6 +254,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
         return (bool) $this->{$route->exists}($route);
     }
+
     protected function getCollectionMembers($path)
     {
         $route = $this->handleRoute($path);
@@ -237,7 +318,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
     {
         $cleanUrlRoot = $this->getDrupalUrlRootCleared();
         $cleanDocumentRoot = $this->getDocumentRootCleared();
-
+        
         $url = preg_replace("#$cleanUrlRoot#", '', $path);
         $url = static::sanitize($url);
 
@@ -284,6 +365,14 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function nodeContent(stdClass $route)
     {
+        $files = $this->getFiles($route);
+
+        foreach ($files as $file) {
+            if ($file->filename == $route->arguments['content']) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -320,16 +409,21 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private static function sanitize($path)
     {
-        return trim($path, '/');
+        $path = trim($path, '/');
+        $path = urldecode($path);
+        $path = preg_replace('/\s+/', '_', $path);
+
+        return $path;
     }
 
     private function getContentLength($path)
     {
         $length = ezcWebdavGetContentLengthProperty::COLLECTION;
         if(!$this->isCollection($path)) {
-            $length = (string) '3541';
+            $route = $this->handleRoute($path);
+            $length = (string) filesize('public://'.$route->arguments['content']);
         }
-        
+
         return $length;
     }
 
@@ -372,10 +466,60 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         $files = $this->getFiles($route);
       
         foreach($files as $file) {
-            $t[] = new ezcWebdavResource($route->path.'/'.$file->field_upload_description);
+            $t[] = new ezcWebdavResource($route->path.'/'.$file->filename);
         }
 
         return $t;
+    }
+
+    private function nodeContentCollection(stdClass $route)
+    {
+        
+    }
+
+    private function fileNameNewVersion(stdClass $file)
+    {
+        $pathInfo = pathinfo($file->uri);
+        $counter = 1;
+
+        if (preg_match('/_([\d]+)$/', $pathInfo['filename'], $matches)) {
+            $counter = $matches[1] + 1;
+        }
+
+        $pathInfo = pathinfo($file->filename);
+        
+        return(sprintf('%s_%s.%s', $pathInfo['filename'], $counter, $pathInfo['extension']));
+    }
+
+    private function fileExists($filename)
+    {
+        $query = db_select('file_managed', 'fm')
+            ->fields('fm')
+            ->condition('fm.filename', $filename, 'LIKE')
+            ->orderBy('fid', 'DESC')
+            ->execute()
+            ->fetchObject()
+            ;
+
+        return $query ? $query : false;
+    }
+
+    private function getFile(stdClass $route)
+    {
+        $fileField = $this->getDbFileField($route);
+        
+        $query = db_select(sprintf('field_data_%s', $fileField->field_name), 'ff');
+        $query->join('node', 'n', 'n.nid = ff.entity_id');
+        $query->join('file_managed', 'fm', 'ff.field_upload_fid = fm.fid');
+        $file = $query
+            ->fields('ff')
+            ->fields('fm')
+            ->condition('fm.filename', $route->arguments['content'], 'LIKE')
+            ->execute()
+            ->fetchObject()
+            ;
+
+        return $file;
     }
 
     private function getFiles(stdClass $route)
@@ -384,8 +528,10 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         
         $query = db_select(sprintf('field_data_%s', $fileField->field_name), 'ff');
         $query->join('node', 'n', 'n.nid = ff.entity_id');
+        $query->join('file_managed', 'fm', 'ff.field_upload_fid = fm.fid');
         $files = $query
             ->fields('ff')
+            ->fields('fm')
             ->condition('n.title', $route->arguments['node'], '=')
             ->execute()
             ->fetchAll()
