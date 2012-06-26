@@ -49,7 +49,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         $documentRoot
         ;
         
-    public function getInstance()
+    public static function getInstance()
     {
         if (!isset(static::$singleton)) {
             static::$singleton = new static();
@@ -74,19 +74,9 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function createResource($path, $content = null)
     {
-        /*
-        $route = $this->handleRoute($path);
-
-        if(!isset($route->createResource)) {
-            $route->createResource = 'FAKE';
-        }
-
-        if (!method_exists($this, $route->createResource)) {
-            throw new ezcWebdavInconsistencyException('Unallowed to create resource here !');
-        }
-
-        $this->{$route->createResource}($route);
-        */
+        /**
+         * See setResourceContents()
+         */
     }
 
     protected function setResourceContents($path, $content)
@@ -106,18 +96,27 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function nodeContentCreate(stdClass $route, $content)
     {
+        global $user;
+
         $nodeNode = $this->nodeNode($route);
         if (!$node = node_load($nodeNode->nid)) {
             dd($route);
             throw new ezcWebdavInconsistencyException('Unable to load node');
         }
 
+        if (!node_access('update', $node) || !node_access('create', $node)) {
+            $deny = new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad Credentials');
+            dd($deny);
+            return $deny;
+        }
+        
         $file = array(
             'filename' => $route->arguments['content'],
             'uri'      => 'public://'.$route->arguments['content'],
             'filemime' => file_get_mimetype($route->arguments['content']),
             'status'   => 1,
             'display'  => true,
+            'uid'      => $user->uid,
         );
 
         $file = (object) $file;
@@ -126,8 +125,9 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         if ($fileExists = $this->fileExists($file->filename)) {
             $file->uri = 'public://'.$this->fileNameNewVersion($fileExists);
         }
-        
+
         file_put_contents($file->uri, $content);
+
 
         $savedFile = file_save($file);
 
@@ -233,10 +233,47 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function performCopy($fromPath, $toPath, $depth = ezcWebdavRequest::DEPTH_INFINITY)
     {
+        throw new ezcWebdavInconsistencyException("Copy isn't implemented yet");
     }
+
     protected function performDelete($path)
     {
+        $route = $this->handleRoute($path);
+        
+        if ($route->type !== static::ROUTE_NODE_CONTENT) {
+            throw new ezcWebdavInconsistencyException('delete is avaible only for content');
+        }
+
+        $nodeNode = $this->nodeNode($route);
+        if (!$node = node_load($nodeNode->nid)) {
+            dd($route);
+            throw new ezcWebdavInconsistencyException('Unable to load node');
+        }
+
+        if (!node_access('delete', $node)) {
+            $deny = new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad Credentials');
+
+            return $deny;
+        }
+
+        $fileField = $this->getDbFileField($route);
+
+        $file = $this->getFile($route);
+
+        if(file_delete($file, true)) {
+            foreach ($node->{$fileField->field_name}['und'] as $key => $nodeFile) {
+                if ($nodeFile['filename'] != $file->filename) {
+                    continue;
+                }
+                
+                unset($node->{$fileField->field_name}['und'][$key]);
+            }
+
+            node_save($node);
+        }
+        
     }
+
     protected function isCollection($path)
     {
         $route = $this->handleRoute($path);
@@ -283,6 +320,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             foreach($route as $attr => $val) {
                 $obj->{$attr} = $val;
             }
+
             return $obj;
         }
 
@@ -493,33 +531,27 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function fileExists($filename)
     {
-        $query = db_select('file_managed', 'fm')
-            ->fields('fm')
-            ->condition('fm.filename', $filename, 'LIKE')
-            ->orderBy('fid', 'DESC')
-            ->execute()
-            ->fetchObject()
-            ;
+        $t = new stdClass();
+        $t->arguments['content'] = $filename;
+
+        $query = $this->getFile($t);
 
         return $query ? $query : false;
     }
 
     private function getFile(stdClass $route)
     {
-        $fileField = $this->getDbFileField($route);
-        
-        $query = db_select(sprintf('field_data_%s', $fileField->field_name), 'ff');
-        $query->join('node', 'n', 'n.nid = ff.entity_id');
-        $query->join('file_managed', 'fm', 'ff.field_upload_fid = fm.fid');
+        $query = db_select('file_managed', 'fm');
         $file = $query
-            ->fields('ff')
             ->fields('fm')
             ->condition('fm.filename', $route->arguments['content'], 'LIKE')
+            ->orderBy('fid', 'DESC')
             ->execute()
             ->fetchObject()
             ;
 
-        return $file;
+        
+        return file_load($file->fid);
     }
 
     private function getFiles(stdClass $route)
