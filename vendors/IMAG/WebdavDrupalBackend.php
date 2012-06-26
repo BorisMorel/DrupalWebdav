@@ -27,6 +27,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
                 'pattern' => "/%node_type%/%node%",
                 'exists' => "nodeNode",
                 'collection' => 'nodeNodeCollection',
+                'createCollection' => 'nodeNodeCreate',
             ),
             self::ROUTE_NODE_CONTENT => array (
                 'pattern'             => "/%node_type%/%node%/%content%",
@@ -70,6 +71,25 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function createCollection($path)
     {
+        $route = $this->handleRoute($path);
+        
+        if (!method_exists($this, $route->createCollection)) {
+            throw new ezcWebdavInconsistencyException('Unable to create collection here');
+        }
+        
+        $this->{$route->createCollection}($route);
+    }
+
+    public function nodeNodeCreate(stdClass $route)
+    {
+        $node = new stdClass();
+        $node->type = $route->arguments['node_type'];
+        node_object_prepare($node);
+
+        $node->title = $route->arguments['node'];
+        $node->revision = true;
+
+        node_save($node);
     }
 
     protected function createResource($path, $content = null)
@@ -105,9 +125,10 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         if (!node_access('update', $node) || !node_access('create', $node)) {
-            $deny = new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad Credentials');
-            dd($deny);
-            return $deny;
+            return ezcWebdavServer::getInstance()->createUnauthorizedResponse(
+                $path,
+                'Authorization failed.'
+            );
         }
         
         $file = array(
@@ -251,9 +272,10 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         if (!node_access('delete', $node)) {
-            $deny = new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad Credentials');
-
-            return $deny;
+            return ezcWebdavServer::getInstance()->createUnauthorizedResponse(
+                $path,
+                'Authorization failed.'
+            );
         }
 
         $fileField = $this->getDbFileField($route);
