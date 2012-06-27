@@ -2,42 +2,8 @@
 
 class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 {
-    const
-        ROUTE_NODE_ROOT = 0,
-        ROUTE_NODE_TYPE = 1,
-        ROUTE_NODE_NODE = 2,
-        ROUTE_NODE_CONTENT = 3
-        ;
-
     private static
         $singleton,
-        $rootCollection = array(),
-        $routing = array (
-            self::ROUTE_NODE_ROOT    => array (
-                'pattern' => "/",
-                'exists'  => 'nodeRoot',
-                'collection' => 'nodeRootCollection',
-            ),
-            self::ROUTE_NODE_TYPE    => array (
-                'pattern' => "/%node_type%",
-                'exists'  => 'nodeType',
-                'collection' => 'nodeTypeCollection',
-            ),
-            self::ROUTE_NODE_NODE    => array (
-                'pattern' => "/%node_type%/%node%",
-                'exists' => "nodeNode",
-                'collection' => 'nodeNodeCollection',
-                'createCollection' => 'nodeNodeCreate',
-            ),
-            self::ROUTE_NODE_CONTENT => array (
-                'pattern'             => "/%node_type%/%node%/%content%",
-                'exists'              => "nodeContent",
-                'collection'          => 'nodeContentCollection',
-                'setResourceContents' => 'nodeContentCreate',
-                'getResourceContents' => 'nodeContentGet',
-                'getLastModified'     => 'nodeLastModification',
-            )
-        ),
         $properties = array (
             'getcontentlength',
             'getlastmodified',
@@ -46,38 +12,33 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         ;
 
     private
-        $drupalUrlRoot,
-        $documentRoot
+        $router
         ;
-        
-    public static function getInstance()
+  
+    public static function getInstance(WebdavDrupalRouter $router)
     {
         if (!isset(static::$singleton)) {
-            static::$singleton = new static();
+            static::$singleton = new static($router);
         }
 
         return static::$singleton;
     }
-    
-    public function propFind(ezcWebdavPropFindRequest $request)
-    {
-        return parent::propFind($request);
-    }
 
-    public function get(ezcWebdavGetRequest $request)
+    public function __construct(WebdavDrupalRouter $router)
     {
-        return parent::get($request);
+        $this->router = $router;
     }
 
     protected function createCollection($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
         
-        if (!method_exists($this, $route->createCollection)) {
+        if (!method_exists($this, $route->create)) {
             throw new ezcWebdavInconsistencyException('Unable to create collection here');
         }
         
-        $this->{$route->createCollection}($route);
+        $this->{$route->create}($route);
     }
 
     public function nodeNodeCreate(stdClass $route)
@@ -101,7 +62,8 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function setResourceContents($path, $content)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
 
         if(!isset($route->setResourceContents)) {
             $route->setResourceContents = 'FAKE';
@@ -125,10 +87,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         if (!node_access('update', $node) || !node_access('create', $node)) {
-            return ezcWebdavServer::getInstance()->createUnauthorizedResponse(
-                $path,
-                'Authorization failed.'
-            );
+            throw new ezcWebdavInconsistencyException('Bad Credentials');
         }
         
         $file = array(
@@ -171,11 +130,8 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function getResourceContents($path)
     {
-        $route = $this->handleRoute($path);
-
-        if (!isset($route->getResourceContents)) {
-            $route->getResourceContents = 'FAKE';
-        }
+        $route = $this->router
+            ->handleRoute($path);
 
         if (!method_exists($this, $route->getResourceContents)) {
             throw new ezcWebdavInconsistencyException('Unable to get content with this route');
@@ -236,7 +192,8 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function getLastModified($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
 
         if (!isset($route->getLastModified)) {
             return new ezcWebdavDateTime('@'.time());
@@ -254,17 +211,42 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function performCopy($fromPath, $toPath, $depth = ezcWebdavRequest::DEPTH_INFINITY)
     {
-        throw new ezcWebdavInconsistencyException("Copy isn't implemented yet");
+        $fromRoute = $this->router
+            ->handleRoute($fromPath);
+        $toRoute = $this->router
+            ->handleRoute($toPath);
+
+        $fromNode = $this->{$fromRoute->exists}($fromRoute);
+
+        $node = node_load($fromNode->nid);
+        $node->title = $toRoute->arguments['node'];
+
+        node_save($node);
     }
 
     protected function performDelete($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
         
-        if ($route->type !== static::ROUTE_NODE_CONTENT) {
-            throw new ezcWebdavInconsistencyException('delete is avaible only for content');
+        if (!method_exists($this, $route->delete)) {
+            throw new ezcWebdavInconsistencyException("method delete not yet implemented for this path");
         }
 
+        return $this->{$route->delete}($route);
+    }
+
+    private function nodeNodeDelete(stdClass $route)
+    {
+        $dbNode = $this->{$route->exists}($route);
+        
+        if ((bool) $dbNode === true) {
+            node_delete($dbNode->nid);
+        }
+    }
+
+    private function nodeContentDelete(stdClass $route) 
+    {
         $nodeNode = $this->nodeNode($route);
         if (!$node = node_load($nodeNode->nid)) {
             dd($route);
@@ -272,10 +254,15 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         if (!node_access('delete', $node)) {
-            return ezcWebdavServer::getInstance()->createUnauthorizedResponse(
-                $path,
-                'Authorization failed.'
-            );
+            throw new ezcWebdavInconsistencyException('Bad Credentials');
+
+            /*
+              return new ezcWebdavMultistatusResponse(
+              array (
+              new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
+              )
+              );
+            */
         }
 
         $fileField = $this->getDbFileField($route);
@@ -298,9 +285,10 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     protected function isCollection($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
 
-        if ($route->type === static::ROUTE_NODE_CONTENT) {
+        if ($route->type === WebdavDrupalRouter::ROUTE_NODE_CONTENT) {
             return false;
         }
 
@@ -309,92 +297,22 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
     }
     protected function nodeExists($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
 
         return (bool) $this->{$route->exists}($route);
     }
 
     protected function getCollectionMembers($path)
     {
-        $route = $this->handleRoute($path);
+        $route = $this->router
+            ->handleRoute($path);
         
         return $this->{$route->collection}($route);
     }
 
-    /**
-     * Doesn't forget that the root route ( / ) containt module name. E.G /davsrv is the root route ( / ).
-     */
-    private function handleRoute($path)
-    {
-        $routes = static::$routing;
-        $cleanPath = $this->fixPath($path);
-        foreach($routes as $key => $route) {
-            $pattern = $this->eregRoute($route['pattern']);
-            if (!preg_match("#^$pattern$#", $cleanPath)) {
-                continue;
-            }
-            
-            $obj = new stdClass();
-            $obj->type = $key;
-            $obj->path = $path;
-            $obj->url = $cleanPath;
-            $obj->arguments = $this->addArguments($cleanPath, $route);
-            foreach($route as $attr => $val) {
-                $obj->{$attr} = $val;
-            }
-
-            return $obj;
-        }
-
-        return false;     
-    }
-
-    private function addArguments($path, $route)
-    {
-        preg_match_all('/%([^%]+)%/', $route['pattern'], $params);
-        preg_match_all('#/([^/]+)#', $path, $values);
-
-        if (count($params[1]) != count($values[1])) {
-            throw new Exception('The count of this array must be equal');
-        }
-
-        foreach($params[1] as $key => $param) {
-            $res[$param] = $values[1][$key];
-        }
-
-        return $res;
-    }
-
-    private function eregRoute($route)
-    {
-        return preg_replace('/%[^%]+%/', '[^/]+', $route);
-    }
-
-    /**
-     * TODO : Enhancement this function ... Because the count of / is very nosePif ;)
-     */
-
-    private function fixPath($path)
-    {
-        $cleanUrlRoot = $this->getDrupalUrlRootCleared();
-        $cleanDocumentRoot = $this->getDocumentRootCleared();
-        
-        $url = preg_replace("#$cleanUrlRoot#", '', $path);
-        $url = static::sanitize($url);
-
-        $newPath = 
-            '/'
-            .$cleanDocumentRoot
-            .((!empty($cleanDocumentRoot) && !empty($url)) ? '/' : '')
-            .$url
-            ;
-
-        return $newPath;
-    }
-
     private function nodeRoot(stdClass $route)
     {
-        dd($route, 'nodeRoot');
         return true;
     }
 
@@ -436,64 +354,26 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         return false;
     }
 
-    public function setDrupalUrlRoot($path)
-    {
-        $this->drupalUrlRoot = $path;
-
-        return $this;
-    }
-
-    public function setDocumentRoot($path)
-    {
-        $this->documentRoot = $path;
-        
-        return $this;
-    }
-    
-    public function setRootCollection(array $collection)
-    {
-        static::$rootCollection = $collection;
-
-        return $this;
-    }
-
-    public function getDocumentRootCleared()
-    {
-        return static::sanitize($this->documentRoot);
-    }
-
-    public function getDrupalUrlRootCleared()
-    {
-        return static::sanitize($this->drupalUrlRoot);
-    }
-
-    private static function sanitize($path)
-    {
-        $path = trim($path, '/');
-        $path = urldecode($path);
-        $path = preg_replace('/\s+/', '_', $path);
-
-        return $path;
-    }
-
     private function getContentLength($path)
     {
         $length = ezcWebdavGetContentLengthProperty::COLLECTION;
+
         if(!$this->isCollection($path)) {
-            $route = $this->handleRoute($path);
+            $route = $this->router
+                ->handleRoute($path);
             $length = (string) filesize('public://'.$route->arguments['content']);
         }
 
-        return $length;
+        return !empty($length) ? $length : '0';
     }
 
     private function nodeRootCollection(stdClass $route)
     {
-        if (!isset(static::$rootCollection)) {
+        if (false === $this->router->getRootCollection()) {
             return array();
         }
         
-        foreach(static::$rootCollection as $item) {
+        foreach($this->router->getRootCollection() as $item) {
             $t[] = new ezcWebdavCollection($route->path.'/'.$item);
         }
 

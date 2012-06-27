@@ -3,7 +3,7 @@
 require_once(dirname(__FILE__).'/autoload.php');
 
 define("DRUPAL_WEBDAV_URL", 'davsrv');
-define("DOCUMENT_ROOT", '/sharing');
+define("DOCUMENT_ROOT", '/');
 
 /**
  * Implementation of hook_menu
@@ -16,7 +16,6 @@ function davsrv_menu() {
             'access arguments' => array('access content'),
         ),
     );
-    dd($items);
     return $items;
 }
 
@@ -34,13 +33,16 @@ function davsrv_permission() {
 
 function entry_point() {
     $server = ezcWebdavServer::getInstance();
-    
-    $server->auth = new WebdavDrupalAuth();
-
-    $backend = WebdavDrupalBackend::getInstance()
+    $router = new WebdavDrupalRouter();
+    $router
         ->setDrupalUrlRoot(DRUPAL_WEBDAV_URL)
         ->setDocumentRoot(DOCUMENT_ROOT)
-        //        ->setRootCollection(array('sharing', 'partage'))
+        ->setRootCollection(array('sharing', 'partage'))
         ;
+
+    $server->auth = new WebdavDrupalAuth();
+
+    $backend = WebdavDrupalBackend::getInstance($router);
+        
     $server->handle($backend);
 }
