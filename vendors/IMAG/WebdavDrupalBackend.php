@@ -142,7 +142,8 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
     private function nodeContentGet(stdClass $route)
     {
-        return file_get_contents('public://'.$route->arguments['content']);
+        $file = $this->getFile($route);
+        return file_get_contents($file->uri);
     }
 
     public function setProperty($path, ezcWebdavProperty $property)
@@ -232,6 +233,16 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         if (!method_exists($this, $route->delete)) {
             throw new ezcWebdavInconsistencyException("method delete not yet implemented for this path");
         }
+        
+        $node = $this->{$route->exists}($route);
+
+        if (!node_access('delete', $node->nid)) {
+            return new ezcWebdavMultistatusResponse(
+                array (
+                    new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
+                )
+            );
+        }
 
         return $this->{$route->delete}($route);
     }
@@ -251,18 +262,6 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         if (!$node = node_load($nodeNode->nid)) {
             dd($route);
             throw new ezcWebdavInconsistencyException('Unable to load node');
-        }
-
-        if (!node_access('delete', $node)) {
-            throw new ezcWebdavInconsistencyException('Bad Credentials');
-
-            /*
-              return new ezcWebdavMultistatusResponse(
-              array (
-              new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
-              )
-              );
-            */
         }
 
         $fileField = $this->getDbFileField($route);
@@ -347,7 +346,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
         foreach ($files as $file) {
             if ($file->filename == $route->arguments['content']) {
-                return true;
+                return $this->nodeNode($route);
             }
         }
 
@@ -427,7 +426,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
 
         $pathInfo = pathinfo($file->filename);
-        
+
         return(sprintf('%s_%s.%s', $pathInfo['filename'], $counter, $pathInfo['extension']));
     }
 

@@ -2,6 +2,14 @@
 
 class WebdavDrupalAuth implements ezcWebdavBasicAuthenticator, ezcWebdavAuthorizer
 {
+    private
+        $router
+        ;
+    
+    public function __construct(WebdavDrupalRouterInterface $router)
+    {
+        $this->router = $router;
+    }
 
     public function authenticateAnonymous(ezcWebdavAnonymousAuth $data)
     {
@@ -26,4 +34,5 @@ class WebdavDrupalAuth implements ezcWebdavBasicAuthenticator, ezcWebdavAuthoriz
     {
         return true;
     }
+
 }
