@@ -396,7 +396,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             $childRoute = $this->router->handleRoute($path);
             $childs = $this->{$childRoute->collection}($childRoute);
 
-            $t[] = new ezcWebdavCollection($route->path.'/'.$obj->title, null, $childs);
+            $t[] = new ezcWebdavCollection($route->path.'/'.$obj->title, null, is_object($childs) ? $childs : array());
         }
 
         return $t;
