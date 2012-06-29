@@ -235,8 +235,8 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         }
         
         $node = $this->{$route->exists}($route);
-
-        if (!node_access('delete', $node->nid)) {
+        
+        if (!node_access('delete', $node)) {
             return new ezcWebdavMultistatusResponse(
                 array (
                     new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
@@ -391,10 +391,12 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             ->fetchAll()
             ;
         
-        // TODO : Now add the childs ;)
-
         foreach($res as $obj) {
-            $t[] = new ezcWebdavCollection($route->path.'/'.$obj->title);
+            $path = $route->path.'/'.$obj->title;
+            $childRoute = $this->router->handleRoute($path);
+            $childs = $this->{$childRoute->collection}($childRoute);
+
+            $t[] = new ezcWebdavCollection($route->path.'/'.$obj->title, null, $childs);
         }
 
         return $t;
