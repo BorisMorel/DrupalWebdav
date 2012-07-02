@@ -82,7 +82,6 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
         $nodeNode = $this->nodeNode($route);
         if (!$node = node_load($nodeNode->nid)) {
-            dd($route);
             throw new ezcWebdavInconsistencyException('Unable to load node');
         }
 
@@ -260,7 +259,6 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
     {
         $nodeNode = $this->nodeNode($route);
         if (!$node = node_load($nodeNode->nid)) {
-            dd($route);
             throw new ezcWebdavInconsistencyException('Unable to load node');
         }
 
