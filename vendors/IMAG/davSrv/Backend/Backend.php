@@ -295,13 +295,11 @@ class Backend extends \ezcWebdavSimpleBackend
         $node = node_load($fromNode->nid);
 
         if (!node_access('update', $node) || !node_access('create', $node)) {
-            return new \ezcWebdavMultistatusResponse(
-                array (
-                    new \ezcWebdavErrorResponse(\ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
-                )
+            return array (
+                new \ezcWebdavErrorResponse(\ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
             );
         }
-
+        
         $node->title = $toRoute->arguments['node'];
         node_save($node);
     }
@@ -316,12 +314,13 @@ class Backend extends \ezcWebdavSimpleBackend
         }
         
         $node = $this->{$route->exists}($route);
-        
+        if (!$node) {
+            return;  // Maybe this node is already move ; Because DB copy is equivalent to move ; So the oldest node is no longer available
+        }
+
         if (!node_access('delete', $node)) {
-            return new \ezcWebdavMultistatusResponse(
-                array (
-                    new \ezcWebdavErrorResponse(\ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
-                )
+            return array (
+                new \ezcWebdavErrorResponse(\ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
             );
         }
 
