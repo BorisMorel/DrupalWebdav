@@ -1,6 +1,7 @@
 <?php 
+namespace IMAG\davSrv\Router;
 
-class WebdavDrupalRouter implements WebdavDrupalRouterInterface
+class Router implements RouterInterface
 {
     const
         ROUTE_NODE_ROOT = 0,
@@ -58,7 +59,7 @@ class WebdavDrupalRouter implements WebdavDrupalRouterInterface
                 continue;
             }
             
-            $obj = new stdClass();
+            $obj = new \stdClass();
             $obj->type = $key;
             $obj->path = $path;
             $obj->url = $cleanPath;

@@ -1,6 +1,7 @@
 <?php
+namespace IMAG\davSrv\Router;
 
-interface WebdavDrupalRouterInterface
+interface RouterInterface
 {
     function handleRoute($path);
     function setDrupalUrlRoot($path);

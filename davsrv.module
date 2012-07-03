@@ -1,6 +1,16 @@
 <?php
+require_once(dirname(__FILE__).'/vendors/IMAG/Autoloader/Autoloader.php');
+require_once(dirname(__FILE__).'/vendors/ezcomponents/Base/src/base.php');
 
-require_once(dirname(__FILE__).'/autoload.php');
+use IMAG\Autoloader\Autoloader,
+    IMAG\davSrv\Backend\Backend,
+    IMAG\davSrv\Router\Router,
+    IMAG\davSrv\Authentication\Authentication
+    ;
+
+$loader = new Autoloader();
+$loader->register();
+spl_autoload_register("ezcBase::autoload");
 
 define("DRUPAL_WEBDAV_URL", 'davsrv');
 define("DOCUMENT_ROOT", '/sharing');
@@ -16,6 +26,7 @@ function davsrv_menu() {
             'access arguments' => array('access content'),
         ),
     );
+
     return $items;
 }
 
@@ -32,17 +43,19 @@ function davsrv_permission() {
 }
 
 function entry_point() {
+
     $server = ezcWebdavServer::getInstance();
-    $router = new WebdavDrupalRouter();
+
+    $router = new Router();
     $router
         ->setDrupalUrlRoot(DRUPAL_WEBDAV_URL)
         ->setDocumentRoot(DOCUMENT_ROOT)
         //        ->setRootCollection(array('sharing', 'partage'))
         ;
 
-    $server->auth = new WebdavDrupalAuth($router);
+    $server->auth = new Authentication($router);
 
-    $backend = WebdavDrupalBackend::getInstance($router)
+    $backend = Backend::getInstance($router)
         //        ->setExtensionCheck()
         ;
         

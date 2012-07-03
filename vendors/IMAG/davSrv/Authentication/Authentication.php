@@ -1,22 +1,25 @@
 <?php
+namespace IMAG\davSrv\Authentication;
 
-class WebdavDrupalAuth implements ezcWebdavBasicAuthenticator, ezcWebdavAuthorizer
+use IMAG\davSrv\Router\RouterInterface;
+
+class Authentication implements \ezcWebdavBasicAuthenticator, \ezcWebdavAuthorizer
 {
     private
         $router
         ;
     
-    public function __construct(WebdavDrupalRouterInterface $router)
+    public function __construct(RouterInterface $router)
     {
         $this->router = $router;
     }
 
-    public function authenticateAnonymous(ezcWebdavAnonymousAuth $data)
+    public function authenticateAnonymous(\ezcWebdavAnonymousAuth $data)
     {
         return false;
     }
 
-    public function authenticateBasic(ezcWebdavBasicAuth $data)
+    public function authenticateBasic(\ezcWebdavBasicAuth $data)
     {
         global $user;
 
@@ -30,7 +33,7 @@ class WebdavDrupalAuth implements ezcWebdavBasicAuthenticator, ezcWebdavAuthoriz
         return false;        
     }
 
-    public function authorize($user, $path, $access = ezcWebdavAuthorizer::ACCESS_READ)
+    public function authorize($user, $path, $access = \ezcWebdavAuthorizer::ACCESS_READ)
     {
         return true;
     }
