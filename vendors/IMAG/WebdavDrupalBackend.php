@@ -7,12 +7,19 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         $properties = array (
             'getcontentlength',
             'getlastmodified',
-            'resourcetype'
+            'resourcetype',
+            'creationdate',
+            'displayname',
+            //'getcontenttype',
+            'getetag',
+            'supportedlock',
+            'lockdiscovery',
         )
         ;
 
     private
-        $router
+        $router,
+        $checkExten = false
         ;
   
     public static function getInstance(WebdavDrupalRouter $router)
@@ -24,9 +31,16 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         return static::$singleton;
     }
 
-    public function __construct(WebdavDrupalRouter $router)
+    private function __construct(WebdavDrupalRouter $router)
     {
         $this->router = $router;
+    }
+
+    public function setExtensionCheck()
+    {
+        $this->checkExten = true;
+
+        return $this;
     }
 
     protected function createCollection($path)
@@ -79,7 +93,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
     private function nodeContentCreate(stdClass $route, $content)
     {
         global $user;
-
+        
         $nodeNode = $this->nodeNode($route);
         if (!$node = node_load($nodeNode->nid)) {
             throw new ezcWebdavInconsistencyException('Unable to load node');
@@ -89,6 +103,9 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             throw new ezcWebdavInconsistencyException('Bad Credentials');
         }
         
+        $fileField = $this->getDbFileField($route);
+        $instance = field_info_instance('node', $fileField->field_name, $route->arguments['node_type']);
+
         $file = array(
             'filename' => $route->arguments['content'],
             'uri'      => 'public://'.$route->arguments['content'],
@@ -99,18 +116,23 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         );
 
         $file = (object) $file;
-        
-        
+
+        $fve = file_validate_extensions($file, $instance['settings']['file_extensions']);
+
+        if (true === $this->checkExten && false === empty($fve)) {
+            throw new ezcWebdavInconsistencyException('Bad file extension');
+        }
+
         if ($fileExists = $this->fileExists($file->filename)) {
             $file->uri = 'public://'.$this->fileNameNewVersion($fileExists);
         }
 
         file_put_contents($file->uri, $content);
 
-
+        
         $savedFile = file_save($file);
 
-        $fileField = $this->getDbFileField($route);
+        
         
         foreach ($node->{$fileField->field_name}['und'] as $key => $file) {
             $pos = $key + 1;
@@ -166,7 +188,7 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
 
         case 'getlastmodified':
             $property = new ezcWebdavGetLastModifiedProperty();
-            $property->date = $this->getLastModified($path); //new ezcWebdavDateTime('@' .  time());
+            $property->date = $this->getModifiedAt($path); //new ezcWebdavDateTime('@' .  time());
             return $property;
         
         case 'resourcetype':
@@ -174,6 +196,29 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
             $property->type = $this->isCollection($path) ?
                 ezcWebdavResourceTypeProperty::TYPE_COLLECTION : 
                 ezcWebdavResourceTypeProperty::TYPE_RESOURCE;
+            return $property;
+
+        case 'creationdate':
+            $property = new ezcWebdavCreationDateProperty();
+            $property->date = $this->getCreatedAt($path);
+            return $property;
+
+        case 'displayname':
+            $property = new ezcWebdavDisplayNameProperty();
+            $property->displayName = urldecode( basename( $path ) );
+            return $property;
+
+        case 'getetag':
+            $property = new ezcWebdavGetEtagProperty();
+            $property->etag = $this->getETag( $path );
+            return $property;
+
+        case 'supportedlock':
+            $property = new ezcWebdavSupportedLockProperty();
+            return $property;
+
+        case 'lockdiscovery':
+            $property = new ezcWebdavLockDiscoveryProperty();
             return $property;
         }
     }
@@ -190,23 +235,49 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         return $storage;
     }
 
-    private function getLastModified($path)
+    private function getModifiedAt($path)
     {
         $route = $this->router
             ->handleRoute($path);
 
-        if (!isset($route->getLastModified)) {
+        if (!isset($route->modifiedAt)) {
             return new ezcWebdavDateTime('@'.time());
         }
 
-        return $this->{$route->getLastModified}($route);
+        return $this->{$route->modifiedAt}($route);
     }
 
-    private function nodeLastModification(stdClass $route)
+    private function getCreatedAt($path)
+    {
+        $route = $this->router
+            ->handleRoute($path);
+
+        if (!isset($route->createdAt)) {
+            return new ezcWebdavDateTime('@'.time());
+        }
+        
+        return $this->{$route->createdAt}($route);
+    }
+
+    private function nodeContentModifiedAt(stdClass $route)
     {
         $file = $this->getFile($route);
 
         return new ezcWebdavDateTime('@'. $file->timestamp);
+    }
+
+    private function nodeNodeCreatedAt($route)
+    {
+        $node = $this->nodeNode($route);
+
+        return new ezcWebdavDateTime('@'. $node->created);
+    }
+
+    private function nodeNodeModifiedAt($route)
+    {
+        $node = $this->nodeNode($route);
+        
+        return new ezcWebdavDateTime('@'. $node->changed);
     }
 
     protected function performCopy($fromPath, $toPath, $depth = ezcWebdavRequest::DEPTH_INFINITY)
@@ -219,8 +290,16 @@ class WebdavDrupalBackend extends ezcWebdavSimpleBackend
         $fromNode = $this->{$fromRoute->exists}($fromRoute);
 
         $node = node_load($fromNode->nid);
-        $node->title = $toRoute->arguments['node'];
 
+        if (!node_access('update', $node) || !node_access('create', $node)) {
+            return new ezcWebdavMultistatusResponse(
+                array (
+                    new ezcWebdavErrorResponse(ezcWebdavResponse::STATUS_403, $route->path, 'Bad credentials'),
+                )
+            );
+        }
+
+        $node->title = $toRoute->arguments['node'];
         node_save($node);
     }
 

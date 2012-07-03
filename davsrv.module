@@ -42,7 +42,9 @@ function entry_point() {
 
     $server->auth = new WebdavDrupalAuth($router);
 
-    $backend = WebdavDrupalBackend::getInstance($router);
+    $backend = WebdavDrupalBackend::getInstance($router)
+        //        ->setExtensionCheck()
+        ;
         
     $server->handle($backend);
 }
