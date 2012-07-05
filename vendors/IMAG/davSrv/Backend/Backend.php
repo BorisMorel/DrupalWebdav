@@ -230,18 +230,4 @@ class Backend extends \ezcWebdavSimpleBackend
 
         return !empty($length) ? $length : '0';
     }
-
-    private function nodeRootCollection(\stdClass $route)
-    {
-        if (false === $this->router->getRootCollection()) {
-            return array();
-        }
-        
-        foreach($this->router->getRootCollection() as $item) {
-            $t[] = new \ezcWebdavCollection($route->path.'/'.$item);
-        }
-
-        return $t;
-    }
-
 }
