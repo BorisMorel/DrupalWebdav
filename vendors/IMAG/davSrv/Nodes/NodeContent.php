@@ -40,14 +40,16 @@ class NodeContent extends NodeBase
 
     public function getCreatedAt()
     {
-        return false;
+        $file = $this->getFile();
+
+        return new \ezcWebdavDateTime('@'. filectime($file->uri));
     }
 
     public function getUpdatedAt()
     {
         $file = $this->getFile();
 
-        return new \ezcWebdavDateTime('@'. $file->timestamp);
+        return new \ezcWebdavDateTime('@'. filemtime($file->uri));
     }
 
     public function createCollection()
@@ -163,7 +165,9 @@ class NodeContent extends NodeBase
 
     public function getContentLength()
     {
-        return (string) filesize("public://".$this->getRoute()->getArgument('content'));
+        $file = $this->getFile();
+
+        return (string) filesize($file->uri);
     }
 
     private function getFile()
