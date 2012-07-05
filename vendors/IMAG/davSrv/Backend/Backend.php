@@ -114,7 +114,7 @@ class Backend extends \ezcWebdavSimpleBackend
 
         case 'getlastmodified':
             $property = new \ezcWebdavGetLastModifiedProperty();
-            $property->date = $this->getUpdatedAt($path); //new \ezcWebdavDateTime('@' .  time());
+            $property->date = $this->getUpdatedAt($path);
             return $property;
         
         case 'resourcetype':
