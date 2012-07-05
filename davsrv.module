@@ -55,7 +55,8 @@ function entry_point() {
 
     $server->auth = new Authentication($router);
 
-    $backend = Backend::getInstance($router)
+    $backend = Backend::getInstance()
+        ->setRouter($router)
         //        ->setExtensionCheck()
         ;
         

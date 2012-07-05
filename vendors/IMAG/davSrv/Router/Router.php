@@ -1,6 +1,8 @@
 <?php 
 namespace IMAG\davSrv\Router;
 
+use IMAG\davSrv\Entity\Route;
+
 class Router implements RouterInterface
 {
     const
@@ -14,31 +16,19 @@ class Router implements RouterInterface
         $routing = array (
             self::ROUTE_NODE_ROOT    => array (
                 'pattern' => "/",
-                'exists'  => 'nodeRoot',
-                'collection' => 'nodeRootCollection',
+                'class'   => "\IMAG\davSrv\Nodes\NodeRoot",
             ),
             self::ROUTE_NODE_TYPE    => array (
                 'pattern' => "/%node_type%",
-                'exists'  => 'nodeType',
-                'collection' => 'nodeTypeCollection',
+                'class'   => "\IMAG\davSrv\Nodes\NodeType",
             ),
             self::ROUTE_NODE_NODE    => array (
-                'pattern'             => "/%node_type%/%node%",
-                'exists'              => "nodeNode",
-                'collection'          => 'nodeNodeCollection',
-                'create'              => 'nodeNodeCreate',
-                'delete'              => 'nodeNodeDelete',
-                'modifiedAt'          => 'nodeNodeModifiedAt',
-                'createdAt'           => 'nodeNodeCreatedAt',
+                'pattern' => "/%node_type%/%node%",
+                'class'   => "\IMAG\davSrv\Nodes\NodeNode",
             ),
             self::ROUTE_NODE_CONTENT => array (
-                'pattern'             => "/%node_type%/%node%/%content%",
-                'exists'              => "nodeContent",
-                'collection'          => 'nodeContentCollection',
-                'setResourceContents' => 'nodeContentCreate',
-                'getResourceContents' => 'nodeContentGet',
-                'modifiedAt'          => 'nodeContentModifiedAt',
-                'delete'              => 'nodeContentDelete',
+                'pattern' => "/%node_type%/%node%/%content%",
+                'class'   => "\IMAG\davSrv\Nodes\NodeContent",
             ),
         ),
         $rootCollection = array()
@@ -59,16 +49,16 @@ class Router implements RouterInterface
                 continue;
             }
             
-            $obj = new \stdClass();
-            $obj->type = $key;
-            $obj->path = $path;
-            $obj->url = $cleanPath;
-            $obj->arguments = $this->addArguments($cleanPath, $route);
-            foreach($route as $attr => $val) {
-                $obj->{$attr} = $val;
-            }
-
-            return $obj;
+            $entity = new Route(); 
+            $entity
+                ->setType($key)
+                ->setPath($path)
+                ->setUrl($cleanPath)
+                ->setArguments($this->addArguments($cleanPath, $route))
+                ->setClass(static::$routing[$key]['class'])
+                ;
+            
+            return $entity;
         }
 
         return false;  
