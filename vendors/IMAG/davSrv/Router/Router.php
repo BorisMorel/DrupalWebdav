@@ -48,7 +48,7 @@ class Router implements RouterInterface
             if (!preg_match("#^$pattern$#", $cleanPath)) {
                 continue;
             }
-            
+
             $entity = new Route(); 
             $entity
                 ->setType($key)
@@ -85,7 +85,7 @@ class Router implements RouterInterface
         return $this;
     }
     
-    public function getRootCollection()
+    public static function getRootCollection()
     {
         return !empty(static::$rootCollection) ? static::$rootCollection : false; 
     }
@@ -140,7 +140,7 @@ class Router implements RouterInterface
             $res[$param] = $values[1][$key];
         }
 
-        return $res;
+        return !empty($res) ? $res : array();
     }
 
     private static function sanitize($path)

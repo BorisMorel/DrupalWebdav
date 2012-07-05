@@ -7,7 +7,7 @@ interface RouterInterface
     function setDrupalUrlRoot($path);
     function setDocumentRoot($path);
     function setRootCollection(array $collection);
-    function getRootCollection();
+    static function getRootCollection();
     function getDocumentRootCleared();
     function getDrupalUrlRootCleared();
 }
