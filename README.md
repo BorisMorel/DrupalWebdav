@@ -30,7 +30,7 @@ EzComponent implements all webdav methods
 $ tar xvjf ezcomponents-x-x.tar.bz2
 ```
 
-##### Copy folder to DrupalWebdav/vendors
+##### Copy folders to DrupalWebdav/vendors
 
 ```bash
 mkdir DrupalWebdav/vendors/ezcomponents/
@@ -52,7 +52,7 @@ define("DOCUMENT_ROOT", '/sharing');
 ```
 
 **Note:**
-`sharing` is the name of my drupal node_type. You MUST define this node into Drupal and you MUST added a file_upload field.
+`sharing` is the name of my drupal node_type. You MUST define this node into Drupal and you MUST add a file_upload field.
 
 #### Many entrypoints
 
